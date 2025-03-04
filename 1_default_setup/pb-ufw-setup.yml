@@ -1,0 +1,102 @@
+---
+- name: Configure UFW on Swarm and GlusterFS Nodes
+  hosts: all
+  become: true
+  vars:
+    dmz_ports:
+      - { port: 80, proto: "tcp" }
+      - { port: 443, proto: "tcp" }
+    swarm_ports:
+      - { port: 2377, proto: "tcp" }  # Swarm Manager Communication
+      - { port: 7946, proto: "tcp" }  # Swarm Node Communication
+      - { port: 7946, proto: "udp" }  # Swarm Node Communication
+      - { port: 4789, proto: "udp" }  # VXLAN for Swarm Overlay Network
+    gluster_ports:
+      - { port: 24007, proto: "tcp" } # GlusterFS Daemon
+      - { port: 24008, proto: "tcp" } # GlusterFS Management
+      - { port: 49152, proto: "tcp" } # GlusterFS Brick Communication
+    ssh_allowed_ips: "192.168.1.0/24"  # Replace with your management network
+  tasks:
+    - name: Install UFW if not installed
+      apt:
+        name: ufw
+        state: present
+
+    - name: Reset UFW to default
+      command: ufw --force reset
+
+    - name: Default deny all incoming traffic
+      ufw:
+        default: deny
+        direction: incoming
+
+    - name: Default allow all outgoing traffic
+      ufw:
+        default: allow
+        direction: outgoing
+
+    - name: Allow SSH only from trusted IPs on management interface
+      ufw:
+        rule: allow
+        interface: "{{ ansible_host }}"
+        src: "{{ ssh_allowed_ips }}"
+        port: 22
+        proto: tcp
+      when: "'managers' in group_names or 'workers' in group_names"
+
+    - name: Rate-limit SSH to prevent brute-force attacks (Only on managers and workers)
+      command: ufw limit ssh comment 'Rate limit SSH connections'
+      when: "'managers' in group_names or 'workers' in group_names"
+
+    - name: Allow traffic on DMZ interface for web services only (Only on managers)
+      ufw:
+        rule: allow
+        interface: "{{ ansible_host_dmz }}"
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+      loop: "{{ dmz_ports }}"
+      when: "'managers' in group_names"
+
+    - name: Block all other traffic on DMZ interface (Only on managers)
+      ufw:
+        rule: deny
+        direction: in
+        interface: "{{ ansible_host_dmz }}"
+      when: "'managers' in group_names"
+
+    - name: Allow Swarm traffic only within the Swarm network (Only on Swarm nodes)
+      ufw:
+        rule: allow
+        interface: "{{ ansible_host_swarm }}"
+        src: "10.20.20.0/24"
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+      loop: "{{ swarm_ports }}"
+      when: "'managers' in group_names or 'workers' in group_names"
+
+    - name: Block all other traffic on Swarm network (Only on Swarm nodes)
+      ufw:
+        rule: deny
+        direction: in
+        interface: "{{ ansible_host_swarm }}"
+      when: "'managers' in group_names or 'workers' in group_names"
+
+    - name: Allow GlusterFS traffic only within GlusterFS network (Only on Gluster nodes)
+      ufw:
+        rule: allow
+        interface: "{{ ansible_host_glstr }}"
+        src: "10.30.30.0/24"
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+      loop: "{{ gluster_ports }}"
+      when: "'gluster_peers' in group_names"
+
+    - name: Block all other traffic on GlusterFS network (Only on Gluster nodes)
+      ufw:
+        rule: deny
+        direction: in
+        interface: "{{ ansible_host_glstr }}"
+      when: "'gluster_peers' in group_names"
+
+    - name: Enable UFW
+      command: ufw --force enable

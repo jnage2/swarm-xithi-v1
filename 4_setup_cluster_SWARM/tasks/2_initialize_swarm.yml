@@ -1,0 +1,31 @@
+- name: Get Docker host info
+  community.docker.docker_host_info:
+  register: swarm_info
+
+- name: Check if current node is part of a Swarm cluster
+  set_fact:
+    swarm_status: "{{ swarm_info.host_info.Swarm.LocalNodeState }}"
+
+# - name: Debug node status
+#   debug:
+#     var: swarm_status
+
+# - name: Node is part of a Swarm cluster
+#   debug:
+#     msg: "Node {{ inventory_hostname }} is part of a Swarm cluster."
+#   when: swarm_status != "inactive"
+
+# - name: Node is not part of a Swarm cluster
+#   debug:
+#     msg: "Node {{ inventory_hostname }} is not part of a Swarm cluster."
+#   when: swarm_status == "inactive"
+
+- name: Initialize Docker Swarm
+  shell: |
+    docker swarm init \
+      --advertise-addr {{ ansible_host_swarm }} \
+      --listen-addr {{ ansible_host_swarm }}:2377 \
+      --data-path-addr {{ ansible_host_swarm }} \
+#      --default-addr-pool {{ network_swarm }}/24
+  when: ansible_hostname == groups['managers'][0] and swarm_status == "inactive"
+  # Initialise Docker Swarm si le nœud est le premier manager et que Docker Swarm est inactif

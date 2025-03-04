@@ -1,0 +1,29 @@
+---
+- name: Path 001 - iptables
+  hosts: swarm
+  become: true
+
+  vars:
+    ssh_allowed_ips:
+      - "10.12.6.26/32"
+      - "10.12.0.0/24"
+      - "10.12.13.46/32" # AWX
+
+    swarm_network: "10.20.20.0/24"
+    management_network: "10.12.0.0/24"
+    gluster_network: "10.30.30.0/24"
+    docker_containers_subnet: "172.16.0.0/12"
+
+  tasks:
+
+        - name: Autoriser tout le trafic sortant HTTPS
+          command: iptables -A OUTPUT -p tcp --dport 443 -j ACCEPT
+
+        - name: Autoriser la résolution DNS pour Docker
+          command: iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+
+        - name: Autoriser les connexions établies et connexions liées
+          command: iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+        - name: Sauvegarder les règles IPTables pour persistance
+          shell: iptables-save > /etc/iptables/rules.v4

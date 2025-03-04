@@ -1,0 +1,46 @@
+# tasks/join_swarm.yml
+- name: Get manager join token
+  shell: docker swarm join-token -q manager
+  register: manager_token
+  when: ansible_hostname == groups['managers'][0]
+  changed_when: False
+
+- name: Get worker join token
+  shell: docker swarm join-token -q worker
+  register: worker_token
+  when: ansible_hostname == groups['managers'][0]
+  changed_when: False
+
+#- notify: Check node already in Swarm
+
+- name: Get Docker host info
+  community.docker.docker_host_info:
+  register: swarm_info
+
+- name: Check if current node is part of a Swarm cluster
+  set_fact:
+    swarm_status: "{{ swarm_info.host_info.Swarm.LocalNodeState }}"
+
+# - name: Debug node status
+#   debug:
+#     var: swarm_status
+
+# - name: Node is part of a Swarm cluster
+#   debug:
+#     msg: "Node {{ inventory_hostname }} is part of a Swarm cluster."
+#   when: swarm_status != "inactive"
+
+# - name: Node is not part of a Swarm cluster
+#   debug:
+#     msg: "Node {{ inventory_hostname }} is not part of a Swarm cluster."
+#   when: swarm_status == "inactive"
+
+- name: Join Docker Swarm as manager
+  shell: docker swarm join --token {{ hostvars[groups['managers'][0]].manager_token.stdout }} {{ hostvars[groups['managers'][0]].ansible_host_swarm }}:2377
+  when: 
+    - "'managers' in group_names and swarm_status == 'inactive' and ansible_hostname != groups['managers'][0]"
+
+- name: Join Docker Swarm as worker
+  shell: docker swarm join --token {{ hostvars[groups['managers'][0]].worker_token.stdout }} {{ hostvars[groups['managers'][0]].ansible_host_swarm }}:2377
+  when: 
+    - "'workers' in group_names and swarm_status == 'inactive'"

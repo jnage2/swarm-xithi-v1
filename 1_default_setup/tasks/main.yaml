@@ -1,0 +1,88 @@
+---
+# Configure Debian/Ubuntu hosts
+
+    - name: Set the hostname
+      hostname:
+        name: "{{ inventory_hostname }}"
+
+    ##################################################################
+    # Configuration RÉSEAU                                          #
+    ##################################################################
+    - name: Manage /etc/network/interfaces for Debian
+      ansible.builtin.template:
+
+        src: interfaces.j2
+        dest: /etc/network/interfaces
+      notify: Restart networking on Debian
+      when: ansible_facts['distribution'] == 'Debian'
+
+    - name: Manage Netplan for Ubuntu 24.04
+      ansible.builtin.template:
+        src: netplan.yaml.j2
+        dest: /etc/netplan/01-custom-network.yaml
+      notify: Apply netplan on Ubuntu 24.04
+      when: ansible_facts['distribution'] == 'Ubuntu'
+            and ansible_facts['distribution_version'] == '24.04'
+
+    ##################################################################
+    # /etc/hosts                                                    #
+    ##################################################################
+    - name: Manage /etc/hosts (pour tout le monde)
+      ansible.builtin.template:
+        src: hosts.j2
+        dest: /etc/hosts
+      # Sur Ubuntu 24.04, ce n'est pas toujours nécessaire
+      # de faire un "netplan apply" pour recharger /etc/hosts,
+      # mais si vous tenez à l'uniformité, vous pouvez le notifier
+      # notify: Apply netplan on Ubuntu 24.04
+      # ou sur Debian
+      # notify: Restart networking on Debian
+
+    ##################################################################
+    # Mise à jour / Installation packages                            #
+    ##################################################################
+    - name: Update apt cache and optionally upgrade
+      apt:
+        update_cache: yes
+        # upgrade: dist
+
+    - name: Install common packages
+      apt:
+        name:
+          - nano
+          - open-vm-tools
+          - git
+          - curl
+          - btop
+          - ncdu
+          - sudo
+          - fail2ban
+          - python3-pip     # pour docker
+          - python3-docker  # pour docker
+          - lvm2            # pour ceph
+        state: present
+
+    ##################################################################
+    # (Optionnel) Créer un nouvel utilisateur                        #
+    ##################################################################
+    # - name: Create a new user
+    #   user:
+    #     name: "{{ new_user }}"
+    #     password: "{{ user_password | password_hash('sha512') }}"
+    #     shell: /bin/bash
+    #     groups: sudo
+    #     state: present
+
+    ##################################################################
+    # (Optionnel) Reboot si besoin                                   #
+    ##################################################################
+    # - name: Reboot the node
+    #   command: shutdown -r now
+    #   async: 1
+    #   poll: 0
+    #   ignore_errors: yes
+    #
+    # - name: Wait for the node to reboot and become reachable
+    #   wait_for_connection:
+    #     delay: 30
+    #     timeout: 300

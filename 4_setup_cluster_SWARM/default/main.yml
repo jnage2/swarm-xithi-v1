@@ -1,0 +1,4 @@
+# defaults/main.yml
+docker_version: "20.10"
+swarm_manager_ip: "{{ ansible_default_ipv4.address }}"
+network_swarm: 10.20.20.0

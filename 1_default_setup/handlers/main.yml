@@ -1,0 +1,11 @@
+---
+  - name: Restart networking on Debian
+    service:
+      name: networking
+      state: restarted
+    when: ansible_facts['distribution'] == 'Debian'
+
+  - name: Apply netplan on Ubuntu 24.04
+    command: netplan apply
+    when: ansible_facts['distribution'] == 'Ubuntu' 
+          and ansible_facts['distribution_version'] == '24.04'

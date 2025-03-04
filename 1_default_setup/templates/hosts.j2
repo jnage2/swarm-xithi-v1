@@ -1,0 +1,17 @@
+# Fichier géré par Ansible
+
+127.0.0.1   localhost
+
+# HOSTS SWARM #
+
+{% for host in groups['all'] %}
+{{ hostvars[host].ansible_host }} {{ host }}
+{% if 'ansible_host_swarm' in hostvars[host] %}
+{{ hostvars[host].ansible_host_swarm }} {{ host }}-swarm
+{% endif %}
+{% if 'ansible_host_glstr' in hostvars[host] %}
+{{ hostvars[host].ansible_host_glstr }} {{ host }}-ceph
+{% endif %}
+{% endfor %}
+
+# END - HOSTS SWARM #

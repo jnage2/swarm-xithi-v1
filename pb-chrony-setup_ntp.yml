@@ -1,0 +1,52 @@
+---
+- name: Install and configure chrony for time synchronization
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Ensure chrony is installed
+      apt:
+        name: chrony
+        state: present
+        update_cache: yes
+
+    - name: Configure chrony
+      copy:
+        dest: /etc/chrony/chrony.conf
+        content: |
+          server 0.pool.ntp.org iburst
+          server 1.pool.ntp.org iburst
+          server 2.pool.ntp.org iburst
+          server 3.pool.ntp.org iburst
+
+
+    - name: Ensure chrony is started and enabled
+      systemd:
+        name: chrony
+        state: started
+        enabled: true
+
+    - name: Verify chrony service status
+      systemd:
+        name: chrony
+        state: started
+
+    - name: Check chrony tracking
+      command: chronyc tracking
+      register: tracking_output
+
+    - name: Display chrony tracking result
+      debug:
+        var: tracking_output.stdout
+
+    - name: Check chrony sources
+      command: chronyc sources -v
+      register: sources_output
+
+    - name: Display chrony sources result
+      debug:
+        var: sources_output.stdout
+
+    - name: Force chrony to synchronize time
+      command: chronyc makestep
+      ignore_errors: yes

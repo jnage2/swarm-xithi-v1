@@ -1,0 +1,50 @@
+
+
+
+
+  # On récupère la version d'Ubuntu détectée via Ansible
+  # exemple: "20.04", "22.04", etc.
+  # On prend la correspondance dans le dictionnaire
+  # ou, par défaut, on pointe sur la config "default".
+
+#- name: Set Docker version dict from the ubuntu_docker_versions
+#  set_fact:
+#    docker_info: >-
+#      {{
+#        ubuntu_docker_versions.get(
+#          ansible_distribution_version,
+#          ubuntu_docker_versions_default
+#        )
+#      }}
+
+- name: Install required packages
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+    state: present
+    update_cache: yes
+
+- name: Add Docker GPG key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Add Docker repository
+  apt_repository:
+    repo: "{{ docker_info.repo }}"
+    state: present
+
+- name: Install Docker CE
+  apt:
+    name: "{{ docker_info.docker_pkg }}"
+    state: present
+    update_cache: yes
+
+- name: Ensure Docker is running
+  service:
+    name: docker
+    state: started
+    enabled: yes

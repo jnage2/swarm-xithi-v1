@@ -1,0 +1,6 @@
+- name: Check node already in Swarm
+  shell: |
+    docker info | grep 'Swarm: active'
+  register: swarm_status
+  ignore_errors: true
+  changed_when: false

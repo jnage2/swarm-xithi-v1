@@ -1,0 +1,64 @@
+---
+- name: Install and configure GlusterFS on Swarm nodes
+  hosts: all
+  become: true
+  vars:
+    gluster_volume_name: swarm_volume
+    gluster_brick_path: /data/glusterfs
+
+  tasks:
+    - name: Check if at least one GlusterFS peer is reachable
+      command: "ping -c 3 {{ item }}"
+      loop: "{{ groups['gluster_peers'] }}"
+      register: ping_results
+      changed_when: false
+      #failed_when: ping_results is not defined or ping_results.results | map(attribute='rc') | select('equalto', 0) | list | length == 0
+
+    - name: Debug ping results
+      debug:
+        var: ping_results
+
+    - name: Mount GlusterFS volume on client nodes
+      when: inventory_hostname not in groups['gluster_peers']
+      block:
+
+        - name: Install GlusterFS client
+          apt:
+            name: glusterfs-client
+            state: present
+            update_cache: yes        
+        
+        - name: Ensure mount point exists
+          file:
+            path: "/mnt/{{ gluster_volume_name }}"
+            state: directory
+            mode: '0755'
+
+        - name: Construct fstab entry with multiple GlusterFS peers
+          set_fact:
+            gluster_fstab_entry: "{{ groups['gluster_peers'] | join(':/' + gluster_volume_name + ',') + ':/' + gluster_volume_name }} /mnt/{{ gluster_volume_name }} glusterfs defaults,_netdev 0 0"
+
+        - name: Ensure GlusterFS volume is in fstab
+          lineinfile:
+            path: /etc/fstab
+            line: "{{ gluster_fstab_entry }}"
+            state: present
+            create: yes
+            regexp: "^{{ groups['gluster_peers'] | join('|') }}:/{{ gluster_volume_name }}"
+
+        - name: Unmount GlusterFS if already mounted
+          command: "umount /mnt/{{ gluster_volume_name }}"
+          ignore_errors: yes
+
+        - name: Mount GlusterFS volume
+          command: "mount /mnt/{{ gluster_volume_name }}"
+          register: mount_result
+          changed_when: mount_result.rc == 0
+
+        - name: Adjust permissions for GlusterFS mount
+          file:
+            path: "/mnt/{{ gluster_volume_name }}"
+            owner: root
+            group: docker
+            mode: '0775'
+            state: directory

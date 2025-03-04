@@ -1,0 +1,57 @@
+---
+- name: Test de connectivité par ping sur chaque hôte
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: Pinger chaque hôte
+      ansible.builtin.ping:
+      register: ping_result
+
+    - name: Afficher le résultat du ping
+      debug:
+        msg: "{{ inventory_hostname }} : Réponse reçue"
+      when: ping_result.ping is defined
+
+    - name: Avertir si l'hôte ne répond pas
+      debug:
+        msg: "{{ inventory_hostname }} : Pas de réponse"
+      when: ping_result.ping is not defined
+
+    - name: Générer la liste des hôtes à pinguer
+      set_fact:
+        hosts_to_ping: "{{ groups['all'] | difference([inventory_hostname]) }}"
+
+    - name: Vérifier la connectivité via l'IP principale (ansible_host)
+      command: "ping -c 2 {{ hostvars[item]['ansible_host'] }}"
+      loop: "{{ hosts_to_ping }}"
+      register: ping_results
+      ignore_errors: yes
+
+    - name: Vérifier la connectivité via ansible_host_swarm
+      command: "ping -c 2 {{ hostvars[item]['ansible_host'] | regex_replace('10\\.255\\.1\\.', '10.20.20.') }}"
+      loop: "{{ hosts_to_ping }}"
+      when: hostvars[item]['ansible_host'] is defined
+      register: ping_results_swarm
+      ignore_errors: yes
+
+    - name: Vérifier la connectivité via ansible_host_glstr
+      command: "ping -c 2 {{ hostvars[item]['ansible_host'] | regex_replace('10\\.255\\.1\\.', '10.30.30.') }}"
+      loop: "{{ hosts_to_ping }}"
+      when: hostvars[item]['ansible_host'] is defined
+      register: ping_results_ceph
+      ignore_errors: yes
+
+    - name: Afficher les résultats des pings ansible_host
+      debug:
+        msg: "Ping vers {{ item.item }} -> Réussite : {{ 'OK' if item.rc == 0 else 'Échec' }}"
+      loop: "{{ ping_results.results }}"
+
+    - name: Afficher les résultats des pings ansible_host_swarm
+      debug:
+        msg: "Ping vers ansible_host_swarm {{ item.item }} -> Réussite : {{ 'OK' if item.rc == 0 else 'Échec' }}"
+      loop: "{{ ping_results_swarm.results }}"
+
+    - name: Afficher les résultats des pings ansible_host_glstr
+      debug:
+        msg: "Ping vers ansible_host_glstr {{ item.item }} -> Réussite : {{ 'OK' if item.rc == 0 else 'Échec' }}"
+      loop: "{{ ping_results_ceph.results }}"

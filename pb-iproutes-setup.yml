@@ -1,0 +1,48 @@
+    ### 5️⃣ Détection automatique du fichier Netplan et ajout des routes ###
+
+    - name: Trouver le fichier Netplan actif
+      shell: "ls /etc/netplan/*.yaml | head -n 1"
+      register: netplan_file
+      changed_when: false
+      failed_when: netplan_file.stdout == ""
+
+    - name: Lire le contenu du fichier Netplan
+      slurp:
+        src: "{{ netplan_file.stdout }}"
+      register: netplan_content
+      when: netplan_file.stdout != ""
+
+    - name: Vérifier si `routes:` existe déjà
+      set_fact:
+        routes_exist: "{{ 'routes:' in (netplan_content['content'] | b64decode) }}"
+      when: netplan_file.stdout != ""
+
+    - name: Détecter le niveau d'indentation de `routes:` (si présent)
+      set_fact:
+        indent_routes: "{{ (netplan_content['content'] | b64decode | regex_search('^(\\s*)routes:', multiline=True)) or '    ' }}"
+      when: routes_exist
+
+    - name: Ajouter `routes:` si absent
+      blockinfile:
+        path: "{{ netplan_file.stdout }}"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - ROUTES"
+        insertafter: "^  ethernets:"
+        block: |
+          {{ indent_routes }}routes:
+      when: not routes_exist
+
+    - name: Ajouter les routes persistantes dans Netplan
+      blockinfile:
+        path: "{{ netplan_file.stdout }}"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - ROUTES"
+        insertafter: "^{{ indent_routes }}routes:"
+        block: |
+          {{ indent_routes }}  - to: 10.12.6.0/24
+          {{ indent_routes }}    via: 10.12.0.254
+          {{ indent_routes }}  - to: 10.12.13.0/24
+          {{ indent_routes }}    via: 10.12.0.254
+      when: netplan_file.stdout != ""
+
+    - name: Appliquer la configuration Netplan
+      command: netplan apply
+      when: netplan_file.stdout != ""

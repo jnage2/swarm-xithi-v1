@@ -1,0 +1,167 @@
+---
+- name: Sécuriser Docker Swarm avec IPTables en récupérant les interfaces depuis l’inventaire
+  hosts: all
+  become: true
+
+  vars:
+    ssh_allowed_ips:
+      - "10.12.6.26/32"
+      - "10.12.0.0/24"
+      - "10.12.13.46/32" # AWX
+
+    swarm_network: "10.20.20.0/24"
+    management_network: "10.12.0.0/24"
+    gluster_network: "10.30.30.0/24"
+    docker_containers_subnet: "172.16.0.0/12"
+
+  tasks:
+
+    ### 1️⃣ Sauvegarder les configurations existantes ###
+    - name: Sauvegarder la configuration IPTables actuelle
+      shell: iptables-save > /root/iptables-backup.rules
+
+    - name: Sauvegarder la configuration UFW (si installé)
+      shell: cp -r /etc/ufw /root/ufw-backup
+      ignore_errors: true
+
+    ### 2️⃣ Désactiver et désinstaller UFW ###
+    - name: Vérifier si UFW est installé
+      command: dpkg -l | grep ufw
+      register: ufw_installed
+      ignore_errors: true
+      changed_when: false
+
+    - name: Désactiver UFW si installé
+      command: ufw disable
+      when: ufw_installed.rc == 0
+
+    - name: Désinstaller UFW si présent
+      apt:
+        name: ufw
+        state: absent
+      when: ufw_installed.rc == 0
+
+    ### 3️⃣ Vérifier que IPTables est installé ###
+    - name: Vérifier si IPTables est installé
+      command: dpkg -l | grep iptables
+      register: iptables_installed
+      ignore_errors: true
+      changed_when: false
+
+    - name: Installer IPTables si absent
+      apt:
+        name: iptables
+        state: present
+      when: iptables_installed.rc != 0
+
+    ### 4️⃣ Autoriser tout temporairement pour éviter un blocage SSH ###
+    - name: Autoriser tout temporairement pour éviter un blocage
+      command: iptables -P INPUT ACCEPT
+
+    ### 6️⃣ Réinitialiser les règles IPTables ###
+    - name: Vider les règles existantes MAIS garder SSH actif immédiatement après
+      command: >
+        bash -c "iptables -F INPUT && iptables -F FORWARD && iptables -F OUTPUT && {{ ssh_rules }}"
+      vars:
+        ssh_rules: "{% for ip in ssh_allowed_ips %}iptables -A INPUT -p tcp --dport 22 -s {{ ip }} -i {{ hostvars[inventory_hostname]['interfaces_mngt'] }} -j ACCEPT && {% endfor %} true"
+
+    # - name: Vider toutes les chaînes personnalisées
+    #   command: iptables -X
+
+    - name: Redémarrer Docker pour réappliquer ses règles IPTables
+      systemd:
+        name: docker
+        state: restarted
+      when: "'swarm' in group_names"
+
+    ### 7️⃣ Appliquer les nouvelles règles IPTables ###
+    # Allow SSH
+    - name: Autoriser SSH uniquement sur les Managers & Workers
+      command: iptables -A INPUT -p tcp --dport 22 -s {{ item }} -i {{ hostvars[inventory_hostname]['interfaces_mngt'] }} -j ACCEPT
+      loop: "{{ ssh_allowed_ips }}"
+      when: "'swarm' in group_names or 'gluster_peers' in group_names"
+
+    # Allow swarm traffic
+    - name: Autoriser tout le trafic entre Managers et Workers (Swarm)
+      command: iptables -A INPUT -s {{ swarm_network }} -i {{ hostvars[inventory_hostname]['interfaces_swarm'] }} -j ACCEPT
+      when: "'swarm' in group_names"
+    # Allow swarm traffic UDP
+    - name: Autoriser tout le trafic UDP entre Managers et Workers (Swarm)
+      command: iptables -A INPUT -p udp -s {{ swarm_network }} -i {{ hostvars[inventory_hostname]['interfaces_swarm'] }} -j ACCEPT
+      when: "'swarm' in group_names"
+    # Allow http/https traffic WORKERS
+    - name: Autoriser HTTP/HTTPS uniquement sur les Workers
+      command: iptables -A INPUT -p tcp --dport {{ item }} -i {{ hostvars[inventory_hostname]['interfaces_dmz'] }} -j ACCEPT
+      loop:
+        - 80
+        - 443
+      when: "'workers' in group_names"
+    # Allow GlusterFS traffic
+    - name: Autoriser tout le trafic entre les nœuds GlusterFS
+      command: iptables -A INPUT -s {{ gluster_network }} -i {{ hostvars[inventory_hostname]['interfaces_glusterfs'] }} -j ACCEPT
+      when: "'swarm' in group_names or 'gluster_peers' in group_names"
+
+
+    # - name: Autoriser Swarm entre Managers et Workers
+    #   command: iptables -A INPUT -p tcp -s {{ swarm_network }} --dport {{ item }} -i {{ hostvars[inventory_hostname]['interfaces_swarm'] }} -j ACCEPT
+    #   loop:
+    #     - 2377
+    #     - 7946
+    #   when: "'swarm' in group_names"
+
+    # - name: Autoriser UDP pour Swarm Overlay
+    #   command: iptables -A INPUT -p udp -s {{ swarm_network }} --dport {{ item }} -i {{ hostvars[inventory_hostname]['interfaces_swarm'] }} -j ACCEPT
+    #   loop:
+    #     - 7946
+    #     - 4789
+    #   when: "'swarm' in group_names"
+
+    # - name: Autoriser HTTP/HTTPS uniquement sur les Workers
+    #   command: iptables -A INPUT -p tcp --dport {{ item }} -i {{ hostvars[inventory_hostname]['interfaces_dmz'] }} -j ACCEPT
+    #   loop:
+    #     - 80
+    #     - 443
+    #   when: "'workers' in group_names"
+
+    # - name: Autoriser la communication GlusterFS
+    #   command: iptables -A INPUT -p tcp -s {{ gluster_network }} --dport {{ item }} -i {{ hostvars[inventory_hostname]['interfaces_glusterfs'] }} -j ACCEPT
+    #   loop:
+    #     - 24007
+    #     - 24008
+    #     - 49152:49251
+    #   when: "'gluster_peers' in group_names"
+
+    - name: Autoriser le trafic interne Docker
+      command: iptables -A INPUT -i docker0 -j ACCEPT
+      when: "'swarm' in group_names"
+
+    - command: iptables -A INPUT -i docker_gwbridge -j ACCEPT
+      when: "'swarm' in group_names"
+
+    ### 8️⃣ Définir les politiques par défaut pour IPTables ###
+    - name: Vérifier que SSH fonctionne avant de définir `INPUT DROP`
+      command: nc -zv 127.0.0.1 22
+      register: ssh_check
+      ignore_errors: true
+
+    - name: Annuler la configuration si SSH est coupé
+      fail:
+        msg: "ERREUR CRITIQUE : SSH est coupé avant application de la politique `INPUT DROP` !"
+      when: ssh_check.rc != 0
+
+    - name: Définir les politiques par défaut pour IPTables
+      command: iptables -P {{ item.chain }} {{ item.policy }}
+      loop:
+        - { chain: "INPUT", policy: "DROP" }
+        - { chain: "FORWARD", policy: "DROP" }
+        - { chain: "OUTPUT", policy: "ACCEPT" }
+
+    ### 9️⃣ Sauvegarde des règles pour persistance ###
+    - name: Créer le répertoire `/etc/iptables/` s'il n'existe pas
+      file:
+        path: /etc/iptables/
+        state: directory
+        mode: '0755'
+
+    - name: Sauvegarder les règles IPTables pour persistance
+      shell: iptables-save > /etc/iptables/rules.v4

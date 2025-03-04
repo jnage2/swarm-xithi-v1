@@ -1,0 +1,23 @@
+# Fichier géré par Ansible
+
+auto lo
+iface lo inet loopback
+
+# DEFAULT (DMZ)
+allow-hotplug ens192
+iface ens192 inet static
+  address {{ ansible_host }}/24
+  gateway {{ default_gateway }}
+  dns-nameservers {{ dns_nameservers }}
+
+# SWARM 
+allow-hotplug ens224
+iface ens224 inet static
+  address {{ ansible_host_swarm }}/24
+  netmask 255.255.255.0
+
+# DISTRIBUTED VOLUME
+allow-hotplug ens256
+iface ens256 inet static
+  address {{ ansible_host_glstr }}/24
+  netmask 255.255.255.0

@@ -1,0 +1,19 @@
+# Fichier géré par Ansible pour Ubuntu 20.04 (Netplan)
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    ens160: # DEFAULT (DMZ)
+      addresses:
+        - {{ ansible_host }}/24
+      gateway4: {{ default_gateway }}
+      nameservers:
+        addresses: [{{ dns_nameservers }}]
+    ens192:  # SWARM
+      addresses:
+        - {{ ansible_host_swarm }}/24
+    ens224:  # DISTRIBUTED VOLUME
+      addresses:
+        - {{ ansible_host_glstr }}/24
+    ens256:
+        - 

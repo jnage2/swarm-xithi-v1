@@ -1,0 +1,50 @@
+# main.yml
+- name: Setup Docker Swarm Cluster
+  hosts: swarm
+  become: yes
+  gather_facts: yes
+
+  roles:
+    #- 0_test # DEV 
+    #- 1_default_setup # OK
+    # #- 2_default_security
+    # #- 3_add_host_centreon
+    - 4_setup_cluster_SWARM # OK
+    #- 5_setup_cluster_CephFS # à valider après restauration snapchot mais cluster OK
+    #- 6_setup_portainer # DEV
+
+  vars:
+    ubuntu_docker_versions:
+      "18.04":
+        repo: "deb https://download.docker.com/linux/ubuntu bionic stable"
+        docker_pkg: "docker-ce"  # ou docker-ce=5:19.03.15~3-0~ubuntu-bionic
+      "20.04":
+        repo: "deb https://download.docker.com/linux/ubuntu focal stable"
+        docker_pkg: "docker-ce"  # ou docker-ce=5:20.10.8~3-0~ubuntu-focal
+      "22.04":
+        repo: "deb https://download.docker.com/linux/ubuntu jammy stable"
+        docker_pkg: "docker-ce"  # ou docker-ce=5:20.10.15~3-0~ubuntu-jammy
+
+    # Au cas où la version n'est pas dans le dictionnaire
+    # on définit une entrée "default".
+    ubuntu_docker_versions_default:
+      repo: "deb https://download.docker.com/linux/ubuntu focal stable"
+      docker_pkg: "docker-ce"
+
+
+    # Mapping entre versions d'Ubuntu et infos Ceph
+    ubuntu_ceph_map:
+      "18.04":
+        ceph_url: "https://github.com/ceph/ceph/raw/pacific/src/cephadm/cephadm"
+        ceph_release: "pacific"
+      "20.04":
+        ceph_url: "https://github.com/ceph/ceph/raw/reef/src/cephadm/cephadm"
+        ceph_release: "reef"
+      "22.04":
+        ceph_url: "https://github.com/ceph/ceph/raw/reef/src/cephadm/cephadm"
+        ceph_release: "reef"
+
+    # Valeurs par défaut si la version Ubuntu n’est pas dans le dictionnaire
+    ubuntu_ceph_map_default:
+      ceph_url: "https://github.com/ceph/ceph/raw/reef/src/cephadm/cephadm"
+      ceph_release: "reef"

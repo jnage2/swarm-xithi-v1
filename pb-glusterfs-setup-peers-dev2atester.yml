@@ -1,0 +1,118 @@
+---
+- name: Install and configure GlusterFS on Swarm nodes
+  hosts: gluster_peers
+  become: true
+  vars:
+    gluster_volume_name: swarm_volume
+    gluster_brick_path: /data/glusterfs
+
+  tasks:
+    - name: Gather list of GlusterFS peers
+      set_fact:
+        gluster_peers: "{{ groups['gluster_peers'] }}"
+
+    - name: Add GlusterFS repository
+      apt_repository:
+        repo: "ppa:gluster/glusterfs-10"
+        state: present
+
+    - name: Install prerequisites
+      apt:
+        name:
+          - software-properties-common
+          - parted
+          - nfs-common
+          - glusterfs-server
+          - glusterfs-client
+          - lvm2
+        state: present
+        update_cache: yes
+
+    - name: Check if GlusterFS server is installed
+      command: "dpkg -l glusterfs-server"
+      register: glusterfs_check
+      ignore_errors: true
+
+    - name: Debug GlusterFS installation status
+      debug:
+        var: glusterfs_check.stdout_lines
+
+    - name: Ensure GlusterFS service is running
+      systemd:
+        name: glusterd
+        state: started
+        enabled: true
+
+    - name: Detect the disk with no partitions
+      shell: |
+        lsblk -lno NAME,TYPE | awk '$2=="disk"{print $1}' | while read disk; do
+          if [ -z "$(lsblk -lno NAME /dev/$disk | grep -v $disk)" ]; then
+            echo "/dev/$disk"
+            break
+          fi
+        done
+      register: clean_disk
+      changed_when: false
+
+    - name: Debug detected clean disk
+      debug:
+        msg: "Disk detected for use: {{ clean_disk.stdout }}"
+
+    - name: Create a partition and filesystem on the detected disk
+      block:
+        - name: Create a partition on the disk
+          parted:
+            device: "{{ clean_disk.stdout }}"
+            number: 1
+            state: present
+            part_type: primary
+            fs_type: ext4
+
+        - name: Format the partition
+          filesystem:
+            fstype: ext4
+            dev: "{{ clean_disk.stdout }}1"
+
+        - name: Mount the partition
+          mount:
+            path: "{{ gluster_brick_path }}"
+            src: "{{ clean_disk.stdout }}1"
+            fstype: ext4
+            state: mounted
+
+        - name: Add the partition to fstab
+          lineinfile:
+            path: /etc/fstab
+            line: "{{ clean_disk.stdout }}1 {{ gluster_brick_path }} ext4 defaults 0 0"
+            state: present
+
+      when: clean_disk.stdout is defined and clean_disk.stdout != ""
+
+    - name: Ensure brick directory exists
+      file:
+        path: "{{ gluster_brick_path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    # -------------------- Tâches exécutées uniquement sur le premier noeud --------------------
+
+    - name: Probe other GlusterFS peers
+      shell: "gluster peer probe {{ item }}"
+      with_items: "{{ gluster_peers }}"
+      when: inventory_hostname == groups['gluster_peers'][0] and inventory_hostname != item
+      register: probe_results
+
+    - name: Debug peer probe results
+      debug:
+        var: probe_results
+      when: inventory_hostname == groups['gluster_peers'][0]
+
+    - name: Create GlusterFS volume
+      shell: |
+        gluster volume create {{ gluster_volume_name }} replica {{ groups['gluster_peers'] | length }} \
+        {% for host in groups['gluster_peers'] %}{{ host }}:{{ gluster_brick_path }} {% endfor %} force
+      args:
+        creates: /var/lib/glusterd/vols/{{ gluster_volume_name }}
+      when: inventory_hostname == groups['gluster_peers'][0]
