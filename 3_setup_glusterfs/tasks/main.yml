@@ -1,0 +1,9 @@
+
+
+
+
+- include_tasks: pb-glusterfs-setup-peers.yml
+  when: "'glusterfs' in group_names"
+
+- include_tasks: pb-glusterfs-setup-clients.yml
+  when: "'swarm' in group_names"

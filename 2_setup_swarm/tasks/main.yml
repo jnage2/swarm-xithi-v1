@@ -1,7 +1,10 @@
 
 - include_tasks: 1_setup_docker.yml
+  when: "'swarm' in group_names"
+
 
 - include_tasks: 2_initialize_swarm.yml
   when: inventory_hostname == groups['managers'][0]
 
 - include_tasks: 3_join_swarm.yml
+  when: "'swarm' in group_names"
