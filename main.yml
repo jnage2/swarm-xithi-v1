@@ -6,12 +6,9 @@
 
   roles:
     #- 0_test # DEV 
-    #- 1_default_setup # OK
-    # #- 2_default_security
-    # #- 3_add_host_centreon
-    - 4_setup_cluster_SWARM # OK
-    #- 5_setup_cluster_CephFS # à valider après restauration snapchot mais cluster OK
-    #- 6_setup_portainer # DEV
+    - 1_default_setup
+    - 2_setup_cluster_SWARM
+    - 3_setup_cluster_glusterfs 
 
   vars:
     ubuntu_docker_versions:
