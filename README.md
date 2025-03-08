@@ -8,24 +8,33 @@ Voici un exemple de fichier README pour le projet `swarm-art-v1` :
 
 ### Objectif
 
-Ce projet vise à créer un cluster Docker Swarm et à configurer un cluster GlusterFS sur les nœuds spécifiés dans l'inventaire Ansible.
+Ce projet vise à créer un cluster Docker Swarm et un cluster GlusterFS sur les nœuds spécifiés dans l'inventaire Ansible afin de disposé d'une haute disponibilité autant au niveau du fonctionnement des containers et des données.
 
 ### Structure du Projet
 
-Le projet est organisé comme suit :
+Le projet est organisé et s'éxécute comme suit :
 
-- **ansible/** : Contient les playbooks et rôles Ansible pour configurer les clusters Docker Swarm et GlusterFS.
-  - **playbooks/** : Fichiers de playbook pour orchestrer les configurations.
-  - **roles/** : Rôles Ansible définissant les tâches spécifiques pour chaque composant.
-- **inventory/** : Fichiers d'inventaire Ansible définissant les nœuds du cluster.
-- **group_vars/** : Variables spécifiques aux groupes d'inventaire.
-- **host_vars/** : Variables spécifiques aux hôtes individuels.
+- pb-test-ping-asb.yml (Optionnels)
+- main.yml : ce playbook appellera les différents roles permettant la création des clusters :
+      - Default : Renomme la machine, Configure chaque interface réseau, renseigne les fichiers hosts, install les packages utiles.
+      - Swarm : install docker, initilase le cluster swarm et ajoute les noeuds workers et managers en fonction de leurs groupes ansible.
+      - GulsterFS : installer GlusterFS et initilase le cluster glusterfs et ajoute les peers en fonction de leurs groupes ansible.
+- pb-iproutes-setup.yml : Ajoute les routes sur dans le fichier netplan correspondant #TODO check mutli files (swarm, gluster)
+- pb-iptables-setup.yml - Configure iptables :
+    - block tout le traffic
+    - allow ssh seulement sur l'interface management pour des IP difinies (voir var dans le playbook)
+    - allow trafic net-swarm <-> net-swarm
+    - allow trafic net-gluster <-> net-gluster
+    - allow trafic interne Docker
+    - exposer les workers sur l'interface DMZ (443,80)
+
 
 ### Prérequis
 
 - Ansible installé sur la machine de contrôle.
 - Accès SSH aux nœuds du cluster.
-- Docker installé sur tous les nœuds.
+- 4 interfaces réseaux par noeuds Swarm
+- 2 interfaces réseaux par peers Gluster
 
 ### Installation
 
